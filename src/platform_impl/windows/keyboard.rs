@@ -113,9 +113,10 @@ impl KeyEventBuilder {
           *result = ProcResult::Value(LRESULT(0));
         }
 
-        let mut layouts = LAYOUT_CACHE.lock();
-        let event_info =
-          PartialKeyEventInfo::from_message(wparam, lparam, ElementState::Pressed, &mut layouts);
+        let event_info = {
+          let mut layouts = LAYOUT_CACHE.lock();
+          PartialKeyEventInfo::from_message(wparam, lparam, ElementState::Pressed, &mut layouts)
+        };
 
         let mut next_msg = MaybeUninit::uninit();
         let peek_retval = unsafe {
@@ -140,10 +141,12 @@ impl KeyEventBuilder {
           if next_belongs_to_this {
             self.event_info = finished_event_info.take();
           } else {
-            let (_, layout) = layouts.get_current_layout();
-            let is_fake = {
-              let curr_event = finished_event_info.as_ref().unwrap();
+            let is_fake = if let Some(curr_event) = finished_event_info.as_ref() {
+              let mut layouts = LAYOUT_CACHE.lock();
+              let (_, layout) = layouts.get_current_layout();
               is_current_fake(curr_event, next_msg, layout)
+            } else {
+              false
             };
             if is_fake {
               finished_event_info = None;
@@ -151,7 +154,10 @@ impl KeyEventBuilder {
           }
         }
         if let Some(event_info) = finished_event_info {
-          let ev = event_info.finalize(&mut layouts.strings);
+          let ev = {
+            let mut layouts = LAYOUT_CACHE.lock();
+            event_info.finalize(&mut layouts.strings)
+          };
           return vec![MessageAsKeyEvent {
             event: ev,
             is_synthetic: false,
@@ -273,9 +279,10 @@ impl KeyEventBuilder {
           *result = ProcResult::Value(LRESULT(0));
         }
 
-        let mut layouts = LAYOUT_CACHE.lock();
-        let event_info =
-          PartialKeyEventInfo::from_message(wparam, lparam, ElementState::Released, &mut layouts);
+        let event_info = {
+          let mut layouts = LAYOUT_CACHE.lock();
+          PartialKeyEventInfo::from_message(wparam, lparam, ElementState::Released, &mut layouts)
+        };
         let mut next_msg = MaybeUninit::uninit();
         let peek_retval = unsafe {
           PeekMessageW(
@@ -290,17 +297,22 @@ impl KeyEventBuilder {
         let mut valid_event_info = Some(event_info);
         if has_next_key_message {
           let next_msg = unsafe { next_msg.assume_init() };
-          let (_, layout) = layouts.get_current_layout();
-          let is_fake = {
-            let event_info = valid_event_info.as_ref().unwrap();
+          let is_fake = if let Some(event_info) = valid_event_info.as_ref() {
+            let mut layouts = LAYOUT_CACHE.lock();
+            let (_, layout) = layouts.get_current_layout();
             is_current_fake(event_info, next_msg, layout)
+          } else {
+            false
           };
           if is_fake {
             valid_event_info = None;
           }
         }
         if let Some(event_info) = valid_event_info {
-          let event = event_info.finalize(&mut layouts.strings);
+          let event = {
+            let mut layouts = LAYOUT_CACHE.lock();
+            event_info.finalize(&mut layouts.strings)
+          };
           return vec![MessageAsKeyEvent {
             event,
             is_synthetic: false,
